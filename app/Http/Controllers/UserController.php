@@ -2,63 +2,93 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Http\Requests\StoreUserRequest;
+use App\Http\Requests\UpdateUserRequest;
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(): View
     {
-        //
+        $users = User::with(['roles', 'permissions'])
+            ->latest()
+            ->paginate(10);
+
+        return view('users.index', compact('users'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function create(): View
     {
-        //
+        return view('users.create', [
+            'roles' => Role::all(),
+            'permissions' => Permission::all(),
+        ]);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function store(StoreUserRequest $request): RedirectResponse
     {
-        //
+        $user = User::create($request->safe()->only([
+            'name',
+            'email',
+            'password',
+        ]));
+
+        $user->syncRoles([$request->role]);
+        $user->syncPermissions($request->permissions ?? []);
+
+        return redirect()
+            ->route('users.index')
+            ->with('success', 'Usuário cadastrado com sucesso.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function edit(User $user): View
     {
-        //
+        return view('users.edit', [
+            'user' => $user,
+            'roles' => Role::all(),
+            'permissions' => Permission::all(),
+            'userPermissions' => $user->permissions->pluck('name')->toArray(),
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function update(UpdateUserRequest $request, User $user): RedirectResponse
     {
-        //
+        $data = $request->safe()->only([
+            'name',
+            'email',
+            'password',
+        ]);
+
+        if (empty($data['password'])) {
+            unset($data['password']);
+        }
+
+        $user->update($data);
+
+        $user->syncRoles([$request->role]);
+        $user->syncPermissions($request->permissions ?? []);
+
+        return redirect()
+            ->route('users.index')
+            ->with('success', 'Usuário atualizado com sucesso.');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
+    public function destroy(User $user): RedirectResponse
     {
-        //
-    }
+        if ($user->id === auth()->id()) {
+            return redirect()
+                ->route('users.index')
+                ->with('error', 'Você não pode excluir o próprio usuário.');
+        }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        $user->delete();
+
+        return redirect()
+            ->route('users.index')
+            ->with('success', 'Usuário excluído com sucesso.');
     }
 }
